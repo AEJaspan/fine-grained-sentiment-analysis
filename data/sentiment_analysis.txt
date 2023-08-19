@@ -1,0 +1,22 @@
+This task is designed as a starting point for a technical discussion. You're
+not required to select the most sophisticated model or delve too deeply into
+the analysis. Our primary interest lies in understanding your thought process
+rather than the model's peak performance. We recommend not investing an
+excessive amount of time on it, a concise script or notebook is enough.
+
+
+Task details:
+
+1. Fine-Grained Sentiment Analysis: Using the supplied dataset, perform a
+sentiment analysis with the following categories - Very Negative, Negative,
+Neutral, Positive, Very Positive. The target value is the "score" column. Note:
+The "vote" column indicates the number of users who found the review helpful.
+The "review_summary" and "review" columns are self-explanatory. You're free to
+employ any library you're comfortable with.
+
+2. Discussion: Propose a list of points you think should be highlighted in our
+discussion about your solution and thought process (e.g. steps, model choice,
+alternative approaches...).
+
+
+If you have any questions, feel free to reach out at simon.moura@mytwyn.com.

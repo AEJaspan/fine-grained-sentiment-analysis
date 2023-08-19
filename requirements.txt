@@ -1,0 +1,8 @@
+torch
+transformers==3.1.0
+pandas
+ipykernel
+urllib3==1.26.6
+languages
+imblearn
+#huggingface_hub["cli"]
