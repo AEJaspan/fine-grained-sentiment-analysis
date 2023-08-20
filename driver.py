@@ -13,9 +13,8 @@
 
 
 # TODO: 
-# Truncation strategy
 # Running in batch mode
-# Fine tuning with the review label
+# Fine tuning
 # Build alternative method
 
 #%%
@@ -32,15 +31,17 @@ model = AutoModelForSequenceClassification.from_pretrained("nlptown/bert-base-mu
 sentiment_pipeline = pipeline("sentiment-analysis", model=model, tokenizer=tokenizer)
 from langdetect import detect
 from langdetect import DetectorFactory
+from langdetect.lang_detect_exception import LangDetectException
 # https://stats.stackexchange.com/questions/338904/measures-of-ordinal-classification-error-for-ordinal-regression
 from imblearn.metrics import macro_averaged_mean_absolute_error
 from torch.nn import Softmax
+from lxml import html
 
+def strip_html(s):
+    return str(html.fromstring(s).text_content())
 smax = Softmax(dim=-1)
 
-# NOTE:
-# ValueError: Found array with 0 sample(s) (shape=(0,)) while a minimum of 1 is required.
-# --> Zero cases of an imbalanced feature in the data
+#%%
 
 DetectorFactory.seed = 0
 # Use a pipeline as a high-level helper
@@ -49,6 +50,7 @@ data=pd.read_csv('data/finegrained_sentiment_analysis.csv')
 data.dropna(inplace=True)
 print(data.shape)
 print(data['score'].value_counts())
+#%%
 #%%
 # -> 
 # 5    17574
@@ -60,10 +62,34 @@ print(data['score'].value_counts())
 data=data[~data['review'].duplicated(keep=False)]
 print(data.shape)
 print(data)
-data=data[:50]
+data=data[:]
+#%%
+
+print(data['score'].value_counts())
+#%%
 text_columns = ['review_summary', 'review']
-data['language'] = data['review_summary'].apply(lambda x: detect(x) if x!='' else np.nan)
-data['language'].unique()
+def detect_language(x):
+    review = strip_html(x['review'])
+    if (review == '') | (review == np.nan):
+        return np.nan
+    try:
+        lan = detect(review)
+    except LangDetectException as e:
+        print(f'Insufficient input text: {x["review"]} - {e}')
+        lan=np.nan
+    return lan
+# data['language'] = data.apply(detect_language, axis=1)
+# print(data['language'].value_counts())
+# en    25272
+# de        6
+# es        5
+# pt        1
+# fr        1
+# cy        1
+# tl        1
+# it        1
+# nl        1
+# af        1
 
 def clean_response(response):
     response=response[0]
@@ -77,42 +103,55 @@ d=data.copy()
 
 def f(x):
     review=x['review']
-    tokens = tokenizer(review, padding=True, truncation=True, return_tensors="pt")
-    if len(tokens.input_ids) > 545:
-        review_summary=x['review_summary']
-        tokens = tokenizer(review_summary, padding=True, truncation=True, return_tensors="pt")
-        print(len(tokens.input_ids))
+    tokens_review = tokenizer(review, padding=True, truncation=True, return_tensors="pt")
+    review_summary=x['review_summary']
+    tokens_review_summary = tokenizer(review_summary, padding=True, truncation=True, return_tensors="pt")
+    if len(tokens_review.input_ids) > 545:
+        print(len(tokens_review.input_ids))
     with torch.no_grad():
-        logits = model(**tokens, return_dict=True).logits
-    probs = model(**tokens, return_dict=True).logits.softmax(-1)[0]
+        logits_review = model(**tokens_review, return_dict=True).logits
+        logits_review_summary = model(**tokens_review_summary, return_dict=True).logits
+    probs_review = logits_review.softmax(-1)[0]
+    probs_review_summary = logits_review_summary.softmax(-1)[0]
+    probs_combination = (logits_review * logits_review_summary).softmax(-1)[0]
     labels = model.config.id2label
-    predicted_class_id = probs.argmax().item()
-    classification = labels[predicted_class_id]
-    classification_score = probs[predicted_class_id].item()
+    review_class_id = probs_review.argmax().item()
+    review_summary_class_id = probs_review_summary.argmax().item()
+    review_combination_class_id = probs_combination.argmax().item()
     return pd.Series({
-        'sentiment_score': int(classification.split(' ')[0]),
-        'classification_confidence': classification_score
-    }, index=['sentiment_score','classification_confidence'])
+        'sentiment_score': int(labels[review_combination_class_id].split(' ')[0]),
+        'classification_confidence': probs_combination[review_combination_class_id].item(),
+        'sentiment_score_review': int(labels[review_class_id].split(' ')[0]),
+        'classification_confidence_review': probs_review[review_class_id].item(),
+        'sentiment_score_review_summary': int(labels[review_summary_class_id].split(' ')[0]),
+        'classification_confidence_review_summary': probs_review_summary[review_summary_class_id].item()
+    }, index=['sentiment_score','classification_confidence', 'sentiment_score_review', 'classification_confidence_review', 'sentiment_score_review_summary', 'classification_confidence_review_summary'])
     # outputs = model(**tokens, return_dict=True)
     # probs0 = smax(outputs.logits)
     # probs0 = probs0.flatten().detach().numpy()
-
     # prob_pos = probs[1]
     # return model(**tokens, return_dict=True)
-d[['sentiment_score','classification_confidence']] = d.apply(f, axis=1)
+d[['sentiment_score','classification_confidence', 'sentiment_score_review', 'classification_confidence_review', 'sentiment_score_review_summary', 'classification_confidence_review_summary']] = d.apply(f, axis=1)
 d['error'] = np.abs(d['score'] - d['sentiment_score'])
 d
 #%%
-d=data.copy()
-def f(x):
-    review=x['review']
-    tokens = tokenizer(review)
-    if len(tokens.input_ids) > 545:
-        review=x['review_summary']
-        print(len(tokens.input_ids))
-    return clean_response(sentiment_pipeline(review, truncation=True))
-d[['sentiment_score','classification_confidence']] = d['review'].apply(f)
-d['error'] = np.abs(d['score'] - d['sentiment_score'])
+# d=data.copy()
+# def f(x):
+#     review=x['review']
+#     tokens = tokenizer(review)
+#     if len(tokens.input_ids) > 545:
+#         review=x['review_summary']
+#         print(len(tokens.input_ids))
+#     return clean_response(sentiment_pipeline(review, truncation=True))
+# d[['sentiment_score','classification_confidence']] = d['review'].apply(f)
+# d['error'] = np.abs(d['score'] - d['sentiment_score'])
 
 #%%
-macro_averaged_mean_absolute_error(d['score'].values , d['sentiment_score'].values)
+print(d['score'].value_counts(), d['sentiment_score'].value_counts())
+print(np.sort(d['score'].unique()), np.sort(d['sentiment_score'].unique()))
+if np.array_equal(np.sort(d['score'].unique()), np.sort(d['sentiment_score'].unique())):
+    # NOTE:
+    # ValueError: Found array with 0 sample(s) (shape=(0,)) while a minimum of 1 is required.
+    # --> Zero cases of an imbalanced feature in the data
+    print('Warning, macro averaged will not work.')
+macro_averaged_mean_absolute_error(d['score'].values , d['sentiment_score'].values, sample_weight=d['votes'])

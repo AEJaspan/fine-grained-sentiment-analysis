@@ -3,6 +3,7 @@ transformers==3.1.0
 pandas
 ipykernel
 urllib3==1.26.6
+lxml
 languages
 imblearn
 #huggingface_hub["cli"]
