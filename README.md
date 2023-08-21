@@ -17,7 +17,7 @@ A BERT LLM that has been trained on multilingual customer review data base is le
 |Italian |    72k|
 |Spanish |    50k|
 
-# Instillation
+# Setup
 
 ```
 python3.7 -m venv .venv
